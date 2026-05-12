@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 运行时数据（不提交）
+.code-agent/history
+.code-agent/tasks.json
+AGENT.local.md
+
+# 本地配置
+.env
+.claude/settings.local.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 测试缓存
+.pytest_cache/
+pytest-cache-files-*/
+.coverage
+htmlcov/

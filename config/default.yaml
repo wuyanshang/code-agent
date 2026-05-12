@@ -1,0 +1,131 @@
+model:
+  provider: mock
+  model_name: ""
+  base_url: ""
+  api_key: ""
+  timeout_seconds: 60
+  presets:
+    mock-a:
+      description: Mock preset model A
+      model_name: mock-preset-a
+    mock-b:
+      description: Mock preset model B
+      model_name: mock-preset-b
+
+agent:
+  max_steps: 8
+  max_tool_failures: 3
+  system_prompt: |
+    你是一个本地代码助手。你的职责是阅读项目、搜索信息、做最小必要修改，并在需要时请求命令执行。
+    你只能使用提供的工具，不能虚构未读取的文件内容。
+    修改代码前先读取相关上下文。命令执行受审批策略约束，遇到受限命令时要说明原因。
+
+project:
+  root: "."
+  ignore_patterns:
+    - ".git"
+    - "__pycache__"
+    - ".idea"
+    - "target"
+    - "node_modules"
+
+tools:
+  read_file_max_chars: 12000
+  read_file_max_size_bytes: 262144
+  search_max_results: 50
+  search_default_head_limit: 250
+  search_use_ripgrep: false
+  command_timeout_seconds: 20
+  command_output_max_chars: 12000
+
+skills:
+  directory: "./skills"
+
+context:
+  budget_tokens_warn: 60000
+  budget_tokens_compact: 90000
+  tool_message_max_chars: 10000
+  compact_keep_recent: 6
+  compact_source_max_chars: 80000
+  compact_auto_use_llm: false
+
+command_policy:
+  default_mode: approval
+  deny_rules:
+    - "curl"
+    - "wget"
+    - "ssh"
+    - "scp"
+    - "del"
+    - "rmdir"
+    - "rm "
+  ask_rules:
+    - "pip install"
+    - "pip uninstall"
+    - "git commit"
+    - "git push"
+    - "mvn test"
+  allow_rules:
+    - "python"
+    - "python3"
+    - "py "
+    - "pytest"
+    - "pip"
+    - "git status"
+    - "git diff"
+    - "git log"
+    - "dir"
+    - "type"
+    - "cd"
+    - "ls"
+    - "pwd"
+    - "echo"
+    - "mvn"
+    - "java"
+    - "javac"
+  blocked_patterns:
+    - "http://"
+    - "https://"
+    - "http.server"
+    - "SimpleHTTPServer"
+    - "python http"
+    - ".sh"
+    - ".bat"
+    - ".exe"
+  deny_operators:
+    - "|"
+    - ">"
+    - ">>"
+    - "<"
+    - "||"
+    - "$("
+    - ";"
+    - "\n"
+    - "\r"
+
+team:
+  mode: coordinate
+  max_parallel: 2
+  max_rounds: 2
+  timeout_seconds: 300  # 整个team执行的超时时间（秒），0表示不限制
+  max_retries: 2  # SubAgent失败重试次数
+  max_context_messages: 40  # SubAgent上下文最大消息数
+  trim_keep_recent: 20  # 裁剪时保留的最近消息数
+  max_total_tokens: 0  # 最大token使用量限制，0表示不限制
+  checkpoint_dir: ".code-agent/checkpoints"  # checkpoint保存目录
+  roles:
+    - name: scout
+      role: "负责探索代码现状、定位关键文件、总结当前约束和事实。"
+      tools: ["list_files", "read_file", "find_files", "glob_files", "search_text", "search_symbol", "search_references", "search_imports"]
+    - name: critic
+      role: "负责质疑当前方案或结论，找隐含假设、边界条件、反例和证据缺口。"
+      tools: ["list_files", "read_file", "find_files", "glob_files", "search_text", "search_symbol", "search_references", "search_imports"]
+    - name: experimenter
+      role: "负责设计和执行最小验证实验，必要时运行命令或做小范围改动。"
+      tools: ["list_files", "read_file", "find_files", "glob_files", "search_text", "run_command", "write_file", "replace_in_file", "append_file", "preview_diff"]
+    - name: judge
+      role: "负责根据证据做阶段性裁决，判断继续验证、进入实现还是停止。"
+      tools: ["list_files", "read_file", "find_files", "glob_files", "search_text", "preview_diff"]
+
+logging:
+  level: "INFO"
