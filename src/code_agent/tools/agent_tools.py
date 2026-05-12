@@ -41,6 +41,7 @@ class ListAgentsTool(BaseTool):
 
 class DelegateAgentTool(BaseTool):
     name = "delegate_agent"
+    parallel_capable = True  # 支持同步骤内多个 delegate_agent/Task 并发执行
     description = (
         "将一个子任务委派给专门的 agent（等同于 Task 工具）。"
         "该 agent 使用独立的系统提示和工具集来完成任务，然后将结果返回给你。\n"
@@ -107,6 +108,34 @@ class DelegateAgentTool(BaseTool):
         return asyncio.run(
             self._run_sub_agent(agent_def, task, context, label, subcommand_approval)
         )
+
+    async def execute_async(self, arguments: dict[str, Any], context: Any) -> ToolResult:
+        """并发执行版本：直接 await _run_sub_agent，无需 ThreadPoolExecutor。
+        当同一 LLM 步骤内有多个 delegate_agent/Task 调用时，session 会用
+        asyncio.gather() 同时调用此方法，实现真正的并行执行。
+        """
+        loader: AgentLoader | None = getattr(context, "agent_loader", None)
+        if loader is None:
+            return ToolResult(ok=False, content="", error="agent_loader not configured")
+
+        agent_name = arguments.get("agent") or arguments.get("subagent_type", "")
+        task = arguments.get("task") or arguments.get("prompt", "")
+        if not agent_name or not task:
+            return ToolResult(ok=False, content="", error="需要提供 agent（或 subagent_type）和 task（或 prompt）参数")
+
+        description = arguments.get("description", "")
+        subcommand_approval = arguments.get("subcommand_approval", "auto")
+
+        agent_def = loader.get_agent(agent_name)
+        if agent_def is None:
+            available = [a.name for a in loader.list_agents()]
+            return ToolResult(
+                ok=False, content="",
+                error=f"agent '{agent_name}' not found. available: {', '.join(available) or 'none'}",
+            )
+
+        label = description or task[:60]
+        return await self._run_sub_agent(agent_def, task, context, label, subcommand_approval)
 
     async def _run_sub_agent(
         self,

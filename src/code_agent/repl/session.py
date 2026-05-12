@@ -34,7 +34,7 @@ from code_agent.repl.renderer import (
 )
 from code_agent.safety.command_guard import CommandGuard
 from code_agent.safety.path_guard import PathGuard
-from code_agent.schemas import CommandDecision, PendingApproval
+from code_agent.schemas import CommandDecision, PendingApproval, ToolResult
 from code_agent.skills.loader import SkillLoader
 from code_agent.tools.registry import ToolRegistry
 from code_agent.utils.context_budget import (
@@ -532,6 +532,9 @@ class ReplSession:
                 "tool_calls": assistant_tool_calls,
             })
 
+            # ── 工具执行：parallel_capable 工具并发，其余串行 ──────────────
+            # 解析所有工具调用的参数
+            parsed_calls: list[tuple[str, str, str, dict[str, Any]]] = []
             for idx, tc in enumerate(tool_calls_raw):
                 tool_call_id = tc["id"] or f"call_{self.step_count}_{idx + 1}"
                 name = tc["name"]
@@ -539,6 +542,53 @@ class ReplSession:
                     arguments = json.loads(tc["arguments"]) if tc["arguments"] else {}
                 except json.JSONDecodeError:
                     arguments = {}
+                parsed_calls.append((tool_call_id, name, tc["arguments"], arguments))
+
+            # 找出所有 parallel_capable 工具的下标（如 delegate_agent / Task）
+            parallel_indices = [
+                i for i, (_, name, _, _) in enumerate(parsed_calls)
+                if getattr(self.tool_registry._tools.get(name), "parallel_capable", False)
+            ]
+            run_parallel = len(parallel_indices) > 1
+
+            if run_parallel:
+                print_info(f"⚡ 并发启动 {len(parallel_indices)} 个子 agent…")
+
+            # 执行所有工具，结果存入 results[i]
+            results: list[Any] = [None] * len(parsed_calls)
+
+            async def _run_parallel_tool(i: int) -> None:
+                tool_call_id, name, _, arguments = parsed_calls[i]
+                print_tool_call(name, arguments)
+                tool = self.tool_registry._tools.get(name)
+                try:
+                    result = await tool.execute_async(arguments, context)
+                except Exception as exc:
+                    logger.exception("tool %s raised", name)
+                    result = ToolResult(ok=False, content="", error=format_tool_error_for_model(str(exc)))
+                results[i] = result
+                status = "✓" if result.ok else "✗"
+                preview = (result.content or result.error or "")[:80].replace("\n", " ")
+                print_tool_result(name, result.ok, f"{preview}")
+
+            if run_parallel:
+                await asyncio.gather(*[_run_parallel_tool(i) for i in parallel_indices])
+
+            # 串行处理剩余工具（含 run_command 审批逻辑）
+            for idx, (tool_call_id, name, _raw_args, arguments) in enumerate(parsed_calls):
+                if run_parallel and idx in parallel_indices:
+                    # 已并发执行，直接用结果
+                    result = results[idx]
+                    if not result.ok:
+                        tool_failures += 1
+                    raw = result.content if result.ok else (result.error or "tool failed")
+                    if not result.ok:
+                        raw = format_tool_error_for_model(str(raw))
+                    self.messages.append({
+                        "role": "tool", "tool_call_id": tool_call_id,
+                        "content": self._tool_content_for_history(str(raw)),
+                    })
+                    continue
 
                 print_tool_call(name, arguments)
 

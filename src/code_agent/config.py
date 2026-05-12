@@ -147,8 +147,24 @@ class AppConfig(BaseModel):
     context: ContextConfig = Field(default_factory=ContextConfig)
 
 
+# code-agent 安装根目录：src/code_agent/config.py → src/code_agent → src → <project_root>
+_INSTALL_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
 class EnvSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="CODE_AGENT_", extra="ignore")
+    """从环境变量（含 .env 文件）读取运行时配置。
+
+    .env 查找顺序（先找到先用）：
+      1. 当前工作目录的 .env
+      2. code-agent 安装目录的 .env（pip install -e 场景）
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="CODE_AGENT_",
+        env_file=[".env", str(_INSTALL_ROOT / ".env")],
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     config: str = "config/default.yaml"
     provider: str = ""

@@ -1,8 +1,8 @@
 model:
-  provider: mock
-  model_name: ""
-  base_url: ""
-  api_key: ""
+  provider: openai_compatible
+  model_name: glm-5
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  api_key: ""          # 通过 .env 的 CODE_AGENT_API_KEY 注入，避免提交到 git
   timeout_seconds: 60
   presets:
     mock-a:
@@ -13,8 +13,8 @@ model:
       model_name: mock-preset-b
 
 agent:
-  max_steps: 8
-  max_tool_failures: 3
+  max_steps: 100
+  max_tool_failures: 100
   system_prompt: |
     你是一个本地代码助手。你的职责是阅读项目、搜索信息、做最小必要修改，并在需要时请求命令执行。
     你只能使用提供的工具，不能虚构未读取的文件内容。
@@ -92,16 +92,9 @@ command_policy:
     - ".sh"
     - ".bat"
     - ".exe"
-  deny_operators:
-    - "|"
-    - ">"
-    - ">>"
-    - "<"
-    - "||"
-    - "$("
-    - ";"
-    - "\n"
-    - "\r"
+  deny_operators: []
+  # 链式/重定向操作符不再硬拦，改为遇到时把 allow_rules 命中的命令升级为审批。
+  # 如需额外封锁某个操作符可在此追加。
 
 team:
   mode: coordinate
